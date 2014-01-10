@@ -137,7 +137,7 @@ function(app, Components, FauxtonAPI, Databases) {
     },
 
     selectAll: function(evt){
-      $("input:checkbox").attr('checked', !$(evt.target).hasClass('active'));
+      $("input:checkbox.row-select").attr('checked', !$(evt.target).hasClass('active'));
     }
   });
 
