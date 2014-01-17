@@ -1137,9 +1137,14 @@ function(app, FauxtonAPI, Components, Documents, Databases, pouchdb, resizeColum
         var $ele;
         switch (key) {
           case "limit":
-            case "group_level":
+          case "group_level":
             $form.find("select[name='"+key+"']").val(val);
-          break;
+            break;
+          case "group":
+            if(val == "true") {
+              $form.find("select[name='group_level']").val("exact");
+            }
+            break;
           case "include_docs":
             case "stale":
             case "descending":
