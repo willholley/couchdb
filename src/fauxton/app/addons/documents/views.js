@@ -1078,6 +1078,16 @@ function(app, FauxtonAPI, Components, Documents, Databases, pouchdb, resizeColum
         return param.value;
       });
 
+      // replace group_level=exact with group=true (group_level=exact is invalid)
+      params = _.map(params, function(param) {
+        if(param.name === "group_level" && param.value === "exact") {
+          return { name: "group", value: "true" };
+        }
+        else {
+          return param;
+        }
+      });
+
       // Validate *key* params to ensure they're valid JSON
       var keyParams = ["key","keys","startkey","endkey"];
       var errorParams = _.filter(params, function(param) {
