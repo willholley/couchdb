@@ -122,7 +122,7 @@ class Database(object):
         if index_array_lengths is not None:
             body["index"]["index_array_lengths"] = index_array_lengths
         if selector is not None:
-            body["selector"] = selector
+            body["index"]["selector"] = selector
         if fields is not None:
             body["index"]["fields"] = fields
         if ddoc is not None:
