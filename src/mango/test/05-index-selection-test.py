@@ -107,6 +107,22 @@ class IndexSelectionTests(mango.UserDocsTests):
         resp_explain = self.db.find(selector, explain=True)
         self.assertEqual(resp_explain["index"]["type"], "special")
 
+
+    def test_uses_all_docs_when_fields_do_not_match_selector_2(self):
+        # as in test above, use a selector that doesn't map to a 
+        # range query on the index
+        selector = {
+            "company": "Pharmex",
+            "manager": {"$exists": False}
+        }
+        docs = self.db.find(selector)
+        self.assertEqual(len(docs), 1)
+        self.assertEqual(docs[0]["company"], "Pharmex")
+        self.assertNotIn("manager", docs[0])
+        
+        resp_explain = self.db.find(selector, explain=True)
+        self.assertEqual(resp_explain["index"]["type"], "special")
+
     def test_reject_use_index_invalid_fields(self):
         # index on ["company","manager"] which should not be valid
         ddocid = "_design/a0c425a60cf3c3c09e3c537c9ef20059dcef9198"
