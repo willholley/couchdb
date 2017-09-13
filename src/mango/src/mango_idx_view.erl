@@ -114,11 +114,70 @@ columns(Idx) ->
 
 
 is_usable(Idx, Selector) ->
-    % This index is usable if at least the first column is
-    % a member of the indexable fields of the selector.
+    % categorise each field in the selector one of:
+    % range - translates to a key range
+    % equal - translates to equality
+    % exist - field must exist (but can be null)
+
+    % This index then usable if the selector can be translated
+    % into a contiguous range of rows in the index. 
+    % For non-reduced queries, this means:
+    % * at least one key is an equality or range query
+    % * any keys preceeding a range query are restricted by equality
+    % * any keys proceeding a range or equality query are required to be present by the selector
+
+    % note that we don't need to return an exact match, but it must be possible
+    % to return a contiguous range that is a superset of the selector.
+    
+    % If the $text operator used, the JSON index is not valid
+
     Columns = columns(Idx),
-    Fields = indexable_fields(Selector),
-    lists:member(hd(Columns), Fields) andalso not is_text_search(Selector).
+    Fields = categorise_fields(Selector),
+    is_contiguous_range(Columns, Fields, range) andalso not is_text_search(Selector).
+
+
+% if we validated all columns, the index is usable
+is_contiguous_range([], _, _) ->
+    true;
+% at least one key is an equality or range query
+% any keys preceeding a range query are restricted by equality
+is_contiguous_range([Column | Rest], Fields, range) ->
+    case lists:filter(fun({Field, _}) -> Field =:= Column end, Fields) of
+        [] ->
+            false;
+        [{Column, range}] ->
+            is_contiguous_range(Rest, Fields, equal);
+        [{Column, equal}] ->
+            is_contiguous_range(Rest, Fields, range);
+        [{Column, exists}] ->
+            false
+    end;
+% a range is present, now only equal or exists are valid
+is_contiguous_range([Column | Rest], Fields, equal) ->
+    case lists:filter(fun({Field, _}) -> Field =:= Column end, Fields) of
+        [] ->
+            false;
+        [{Column, range}] ->
+            false; % range cannot proceed range or equal
+        [{Column, equal}] ->
+            is_contiguous_range(Rest, Fields, equal);
+        [{Column, exists}] ->
+            is_contiguous_range(Rest, Fields, exists)
+    end;
+% only exists or equality are valid now
+% equality is valid here because it implies that the field exists -
+% it cannot be used in the range query itself
+is_contiguous_range([Column | Rest], Fields, exists) ->
+    case lists:filter(fun({Field, _}) -> Field =:= Column end, Fields) of
+        [] ->
+            false;
+        [{Column, range}] ->
+            false; % range cannot proceed exists
+        [{Column, equal}] ->
+            is_contiguous_range(Rest, Fields, exists);
+        [{Column, exists}] ->
+            is_contiguous_range(Rest, Fields, exists)
+    end.
 
 
 is_text_search({[]}) ->
@@ -224,21 +283,70 @@ validate_ddoc(VProps) ->
     end.
 
 
+% use precendence range > equal > exist
+compare_field({FieldA, TypeA}, {FieldB, TypeB}) ->
+    case FieldA =:= FieldB of
+        true ->
+            case {TypeA, TypeB} of
+                {range, _} ->
+                    true;
+                {equal, exist} ->
+                    true;
+                _ ->
+                    false
+            end;
+        _ ->
+            FieldA > FieldB
+    end.
+
+
+% This function categorises each field in a selector
+% based on whether they can contribute to a key
+% range or not. Each field is categorised as
+% either:
+% range - range operator
+% equal - equality operator
+% exists - operator that requires the field to exist
+categorise_fields({[{<<"$and">>, Args}]}) ->
+    Fields = lists:flatten([categorise_fields(A) || A <- Args]),
+    SortedFields = lists:usort(fun compare_field/2, Fields),
+
+    % we may have dupicates if a field has multiple operators. 
+    % in this case, use precendence range > equal > exist
+    % and take the first occurrance of each field
+    lists:ukeysort(1, SortedFields);
+
+% So far we can't see through any other operator
+categorise_fields({[{<<"$", _/binary>>, _}]}) ->
+    [];
+
+% If we have a field with a terminator that is locatable
+% using an index then the field is a possible index
+categorise_fields({[{Field, Cond}]}) ->
+    case indexable(Cond) of
+        {true, Type} ->
+            [{Field, Type}];
+        {maybe, Type} ->
+            [{Field, Type}];
+        false ->
+            []
+    end;
+
+% An empty selector
+categorise_fields({[]}) ->
+    [].
+
+
 % This function returns a list of indexes that
 % can be used to restrict this query. This works by
 % searching the selector looking for field names that
-% can be "seen".
+% can contribute to a key range.
 %
 % Operators that can be seen through are '$and' and any of
 % the logical comparisons ('$lt', '$eq', etc). Things like
-% '$regex', '$in', '$nin', and '$or' can't be serviced by
-% a single index scan so we disallow them. In the future
-% we may become more clever and increase our ken such that
-% we will be able to see through these with crafty indexes
-% or new uses for existing indexes. For instance, I could
-% see an '$or' between comparisons on the same field becoming
-% the equivalent of a multi-query. But that's for another
-% day.
+% '$regex', '$in', '$nin' can be used to infer that a field
+% exists and therefore an index may be valid on that basis,
+% but they cannot be used to generate a contiguous range.
 
 % We can see through '$and' trivially
 indexable_fields({[{<<"$and">>, Args}]}) ->
@@ -252,9 +360,9 @@ indexable_fields({[{<<"$", _/binary>>, _}]}) ->
 % using an index then the field is a possible index
 indexable_fields({[{Field, Cond}]}) ->
     case indexable(Cond) of
-        true ->
+        {true, _} ->
             [Field];
-        false ->
+        _ ->
             []
     end;
 
@@ -270,21 +378,23 @@ indexable_fields({[]}) ->
 % aren't currently supported because they require
 % multiple index scans.
 indexable({[{<<"$lt">>, _}]}) ->
-    true;
+    {true, range};
 indexable({[{<<"$lte">>, _}]}) ->
-    true;
+    {true, range};
 indexable({[{<<"$eq">>, _}]}) ->
-    true;
+    {true, equal};
 indexable({[{<<"$gt">>, _}]}) ->
-    true;
+    {true, range};
 indexable({[{<<"$gte">>, _}]}) ->
-    true;
+    {true, range};
+indexable({[{<<"$exists">>, false}]}) ->
+    false;
 
 % All other operators are currently not indexable.
 % This is also a subtle assertion that we don't
 % call indexable/1 on a field name.
 indexable({[{<<"$", _/binary>>, _}]}) ->
-    false.
+    {maybe, exists}.
 
 
 % For each field, return {Field, Range}
