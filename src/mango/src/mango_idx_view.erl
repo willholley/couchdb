@@ -114,11 +114,11 @@ columns(Idx) ->
 
 
 is_usable(Idx, Selector) ->
-    % This index is usable if at least the first column is
-    % a member of the indexable fields of the selector.
-    Columns = columns(Idx),
-    Fields = indexable_fields(Selector),
-    lists:member(hd(Columns), Fields) andalso not is_text_search(Selector).
+    % An index is usable if all of the columns are 
+    % required to exist by the selector
+    SortedColumns = lists:sort(columns(Idx)),
+    Fields = must_exist(Selector),
+    ordsets:is_subset(SortedColumns, Fields) andalso not is_text_search(Selector).
 
 
 is_text_search({[]}) ->
@@ -224,21 +224,40 @@ validate_ddoc(VProps) ->
     end.
 
 
+% This function returns the list of fields that
+% must exist according to the selector
+must_exist({[{<<"$and">>, Args}]}) ->
+    lists:usort(lists:flatten([must_exist(A) || A <- Args]));
+
+% So far we can't see through any other operator
+must_exist({[{<<"$", _/binary>>, _}]}) ->
+    [];
+
+must_exist({[{Field, Cond}]}) ->
+    case indexable(Cond) of
+        true ->
+            [Field];
+        maybe ->
+            [Field];
+        false ->
+            []
+    end;
+
+% An empty selector
+must_exist({[]}) ->
+    [].
+
+
 % This function returns a list of indexes that
 % can be used to restrict this query. This works by
 % searching the selector looking for field names that
-% can be "seen".
+% can contribute to a key range.
 %
 % Operators that can be seen through are '$and' and any of
 % the logical comparisons ('$lt', '$eq', etc). Things like
-% '$regex', '$in', '$nin', and '$or' can't be serviced by
-% a single index scan so we disallow them. In the future
-% we may become more clever and increase our ken such that
-% we will be able to see through these with crafty indexes
-% or new uses for existing indexes. For instance, I could
-% see an '$or' between comparisons on the same field becoming
-% the equivalent of a multi-query. But that's for another
-% day.
+% '$regex', '$in', '$nin' can be used to infer that a field
+% exists and therefore an index may be valid on that basis,
+% but they cannot be used to generate a contiguous range.
 
 % We can see through '$and' trivially
 indexable_fields({[{<<"$and">>, Args}]}) ->
@@ -254,7 +273,7 @@ indexable_fields({[{Field, Cond}]}) ->
     case indexable(Cond) of
         true ->
             [Field];
-        false ->
+        _ ->
             []
     end;
 
@@ -279,12 +298,14 @@ indexable({[{<<"$gt">>, _}]}) ->
     true;
 indexable({[{<<"$gte">>, _}]}) ->
     true;
+indexable({[{<<"$exists">>, false}]}) ->
+    false;
 
 % All other operators are currently not indexable.
 % This is also a subtle assertion that we don't
 % call indexable/1 on a field name.
 indexable({[{<<"$", _/binary>>, _}]}) ->
-    false.
+    maybe.
 
 
 % For each field, return {Field, Range}

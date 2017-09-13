@@ -14,7 +14,6 @@ import mango
 import user_docs
 import unittest
 
-
 class IndexSelectionTests(mango.UserDocsTests):
     @classmethod
     def setUpClass(klass):
@@ -23,7 +22,7 @@ class IndexSelectionTests(mango.UserDocsTests):
             user_docs.add_text_indexes(klass.db, {})
 
     def test_basic(self):
-        resp = self.db.find({"name.last": "A last name"}, explain=True)
+        resp = self.db.find({"age": 123}, explain=True)
         self.assertEqual(resp["index"]["type"], "json")
 
     def test_with_and(self):
@@ -108,9 +107,9 @@ class IndexSelectionTests(mango.UserDocsTests):
         self.assertEqual(resp_explain["index"]["type"], "special")
 
 
-    def test_uses_all_docs_when_fields_do_not_match_selector_2(self):
-        # as in test above, use a selector that doesn't map to a 
-        # range query on the index
+    def test_uses_all_docs_when_selector_doesnt_require_fields_to_exist(self):
+        # as in test above, use a selector that doesn't overlap with the index
+        # due to an explicit exists clause
         selector = {
             "company": "Pharmex",
             "manager": {"$exists": False}
@@ -122,6 +121,7 @@ class IndexSelectionTests(mango.UserDocsTests):
         
         resp_explain = self.db.find(selector, explain=True)
         self.assertEqual(resp_explain["index"]["type"], "special")
+
 
     def test_reject_use_index_invalid_fields(self):
         # index on ["company","manager"] which should not be valid
