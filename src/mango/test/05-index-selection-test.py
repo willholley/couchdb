@@ -244,6 +244,60 @@ class TextIndexSelectionTests(mango.UserDocsTests, IndexSelectionTests):
         self.assertEqual(docs[0]["name"]["first"], "Stephanie")
         self.assertEqual(docs[0]["age"], 48)
 
+    def test_basic_covering_index(self):
+        selector = {"age": {"$lt": 35}}
+        respExplain = self.db.find(selector, fields=["age"], explain=True)
+        self.assertEqual(respExplain["index"]["type"], "json")
+        self.assertEqual(respExplain["mrargs"]["include_docs"], False)
+
+        resp = self.db.find(selector, fields=["age"], return_raw=True, executionStats=True)
+        self.assertEqual(len(resp["docs"]), 3)
+        self.assertEqual(resp["execution_stats"]["total_keys_examined"], 3)
+        self.assertEqual(resp["execution_stats"]["total_docs_examined"], 0)
+        self.assertEqual(resp["execution_stats"]["results_returned"], 3)
+
+    def test_or_covering_index(self):
+        selector = {
+            "age": {"$lt": 25},
+            "$or":[
+                {"age": {"$lt": 35}},
+                {"age": {"$gt": 45}}
+            ]
+        }
+        respExplain = self.db.find(selector, fields=["age"], explain=True)
+        self.assertEqual(respExplain["index"]["type"], "json")
+        self.assertEqual(respExplain["mrargs"]["include_docs"], False)
+
+        resp = self.db.find(selector, fields=["age"], return_raw=True, executionStats=True)
+        self.assertEqual(len(resp["docs"]), 1)
+        self.assertEqual(resp["execution_stats"]["total_keys_examined"], 1)
+        self.assertEqual(resp["execution_stats"]["total_docs_examined"], 0)
+        self.assertEqual(resp["execution_stats"]["results_returned"], 1)
+
+
+    def test_nested_field_covering_index(self):
+        selector = { 
+            "name": {
+                "first": "Stephanie",
+                "last": "This doesn't have to match anything."
+            }
+        }
+        respExplain = self.db.find(selector, fields=["name.first", "name.last"], explain=True)
+        self.assertEqual(respExplain["index"]["type"], "json")
+        self.assertEqual(respExplain["mrargs"]["include_docs"], False)
+    
+    # should not be covering index because it requests
+    # an array field which cannot be represented fully
+    # in a key
+    def test_array_field_not_valid_covering_index(self):
+        selector = { 
+            "favorites": { "$gt": None }
+        }
+        respExplain = self.db.find(selector, fields=["favorites"], explain=True)
+        self.assertEqual(respExplain["index"]["type"], "special")
+        self.assertEqual(respExplain["mrargs"]["include_docs"], True)
+
+
 
 @unittest.skipUnless(mango.has_text_service(), "requires text service")
 class MultiTextIndexSelectionTests(mango.UserDocsTests):

@@ -25,6 +25,7 @@
     user_fun,
     user_acc,
     execution_stats = #execution_stats{},
+    covering_index = false,
     bookmark,
     bookmark_docid,
     bookmark_key

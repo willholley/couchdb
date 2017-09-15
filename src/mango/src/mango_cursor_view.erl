@@ -50,7 +50,8 @@ create(Db, Indexes, Selector, Opts) ->
         limit = Limit,
         skip = Skip,
         fields = Fields,
-        bookmark = Bookmark
+        bookmark = Bookmark,
+        covering_index = is_covering_index(Index, Selector, Fields)
     }}.
 
 
@@ -98,8 +99,20 @@ base_args(#cursor{index = Idx} = Cursor) ->
         reduce = false,
         start_key = mango_idx:start_key(Idx, Cursor#cursor.ranges),
         end_key = mango_idx:end_key(Idx, Cursor#cursor.ranges),
-        include_docs = true
+        include_docs = not Cursor#cursor.covering_index
     }.
+
+% returns true if the index includes all
+% document fields necessary to evaluate the
+% query selector and returned fields
+is_covering_index(_, _, all_fields) ->
+    false;
+is_covering_index(Index, Selector, Fields) ->
+    SortedColumns = lists:usort(mango_idx:columns(Index)),
+    SortedFields = lists:usort(Fields),
+    SortedSelectorFields = mango_selector:fields(Selector),
+    AllFields = ordsets:union(SortedFields, SortedSelectorFields),
+    ordsets:is_subset(AllFields, SortedColumns).
 
 
 execute(#cursor{db = Db, index = Idx, execution_stats = Stats} = Cursor0, UserFun, UserAcc) ->
@@ -211,20 +224,30 @@ choose_best_index(_DbName, IndexRanges) ->
 
 handle_message({meta, _}, Cursor) ->
     {ok, Cursor};
-handle_message({row, Props}, Cursor) ->
-    case doc_member(Cursor#cursor.db, Props, Cursor#cursor.opts, Cursor#cursor.execution_stats) of
+handle_message({row, Props}, Cursor) when Cursor#cursor.covering_index =:= true ->
+    #cursor{
+        index = Idx, 
+        execution_stats = Stats
+    } = Cursor,
+
+    Cursor1 = Cursor#cursor {
+        execution_stats = mango_execution_stats:incr_keys_examined(Stats)
+    },
+    Doc = mango_idx_view:project_from_row(Idx, Props),
+    match_doc(Cursor1, Doc, Props);
+handle_message({row, Props}, Cursor) when Cursor#cursor.covering_index =:= false ->
+    #cursor{
+        db = Db, 
+        opts = Opts, 
+        execution_stats = Stats
+    } = Cursor,
+
+    case doc_member(Db, Props, Opts, Stats) of
         {ok, Doc, {execution_stats, ExecutionStats1}} ->
             Cursor1 = Cursor#cursor {
                 execution_stats = ExecutionStats1
             },
-            case mango_selector:match(Cursor1#cursor.selector, Doc) of
-                true ->
-                    Cursor2 = update_bookmark_keys(Cursor1, Props),
-                    FinalDoc = mango_fields:extract(Doc, Cursor2#cursor.fields),
-                    handle_doc(Cursor2, FinalDoc);
-                false ->
-                    {ok, Cursor1}
-            end;
+            match_doc(Cursor1, Doc, Props);
         Error ->
             couch_log:error("~s :: Error loading doc: ~p", [?MODULE, Error]),
             {ok, Cursor}
@@ -233,6 +256,22 @@ handle_message(complete, Cursor) ->
     {ok, Cursor};
 handle_message({error, Reason}, _Cursor) ->
     {error, Reason}.
+
+
+match_doc(Cursor, Doc, Props) ->
+    #cursor{
+        selector = Selector, 
+        fields = Fields
+    } = Cursor,
+
+    case mango_selector:match(Selector, Doc) of
+        true ->
+            FinalDoc = mango_fields:extract(Doc, Fields),
+            Cursor1 = update_bookmark_keys(Cursor, Props),
+            handle_doc(Cursor1, FinalDoc);
+        false ->
+            {ok, Cursor}
+    end.
 
 
 handle_all_docs_message({row, Props}, Cursor) ->
@@ -273,7 +312,7 @@ apply_opts([], Args) ->
 apply_opts([{r, RStr} | Rest], Args) ->
     IncludeDocs = case list_to_integer(RStr) of
         1 ->
-            true;
+            Args#mrargs.include_docs;
         R when R > 1 ->
             % We don't load the doc in the view query because
             % we have to do a quorum read in the coordinator

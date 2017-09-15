@@ -16,7 +16,8 @@
 -export([
     normalize/1,
     match/2,
-    has_required_fields/2
+    has_required_fields/2,
+    fields/1
 ]).
 
 
@@ -610,6 +611,21 @@ has_required_fields([{[{Field, Cond}]} | Rest], RequiredFields) ->
             has_required_fields(Rest, lists:delete(Field, RequiredFields))
     end.
 
+    
+% This function returns the list of fields
+% This function returns the sorted list of unique fields
+% referenced in a selector
+fields({[{_, Args}]}) when is_list(Args) ->
+    lists:usort(lists:flatten([fields(A) || A <- Args]));
+
+% terminating fields
+fields({[{Field, _}]}) ->
+    [Field];
+
+% An empty selector
+fields({[]}) ->
+    [].
+
 
 %%%%%%%% module tests below %%%%%%%%
 
@@ -672,5 +688,30 @@ has_required_fields_or_test() ->
     }]},
     Normalized = normalize(Selector),
     ?assertEqual(false, has_required_fields(Normalized, RequiredFields)).
+
+fields_basic_selector_test() ->
+     Selector = {[{<<"foo">>, <<"bar">>}]},
+     ?assertEqual([<<"foo">>], fields(Selector)).
+
+fields_and_selector_test() ->
+     Selector = {[{<<"$and">>,[
+                {[{<<"age">>,{[{<<"$lt">>,35}]}}]},
+                {[{<<"age">>,{[{<<"$gt">>,45}]}}]}
+                ]}]},
+     ?assertEqual([<<"age">>], fields(Selector)).
+
+fields_or_selector_test() ->
+     Selector = {[{<<"$or">>,[
+                {[{<<"age">>,{[{<<"$lt">>,35}]}}]},
+                {[{<<"name">>,{[{<<"$gt">>,45}]}}]}
+                ]}]},
+     ?assertEqual([<<"age">>, <<"name">>], fields(Selector)).
+
+fields_allMatch_selector_test() ->
+     Selector = {[{<<"genre">>,
+        {[{<<"$allMatch">>, 
+        }]}
+     }]},
+     ?assertEqual([<<"age">>, <<"name">>], fields(Selector)).
 
 -endif.
