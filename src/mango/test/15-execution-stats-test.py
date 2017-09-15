@@ -38,6 +38,15 @@ class ExecutionStatsTests(mango.UserDocsTests):
         self.assertEqual(resp["execution_stats"]["results_returned"], 3)
         self.assertGreater(resp["execution_stats"]["execution_time_ms"], 0)
 
+    def test_covering_json_index(self):
+        resp = self.db.find({"age": {"$lt": 35}}, fields=["age"], return_raw=True, executionStats=True)
+        self.assertEqual(len(resp["docs"]), 3)
+        self.assertEqual(resp["execution_stats"]["total_keys_examined"], 3)
+        self.assertEqual(resp["execution_stats"]["total_docs_examined"], 0)
+        self.assertEqual(resp["execution_stats"]["total_quorum_docs_examined"], 0)
+        self.assertEqual(resp["execution_stats"]["results_returned"], 3)
+        self.assertGreater(resp["execution_stats"]["execution_time_ms"], 0)
+
 @unittest.skipUnless(mango.has_text_service(), "requires text service")
 class ExecutionStatsTests_Text(mango.UserDocsTextTests):
 

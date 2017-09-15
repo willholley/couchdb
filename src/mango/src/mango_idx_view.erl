@@ -27,7 +27,9 @@
 
     indexable_fields/1,
     field_ranges/1,
-    field_ranges/2
+    field_ranges/2,
+
+    doc_from_row/2
 ]).
 
 
@@ -495,3 +497,13 @@ range_pos(Low, Arg, High) ->
                     max
             end
     end.
+
+
+% generate a document containing only
+% the available values in the index key
+doc_from_row(Index, Props) ->
+    Columns = columns(Index),
+    Id = couch_util:get_value(id, Props),
+    Key = couch_util:get_value(key, Props),
+    DocFields = [{<<"_id">>, Id}] ++ lists:zip(Columns, Key),
+    couch_doc:from_json_obj({DocFields}).

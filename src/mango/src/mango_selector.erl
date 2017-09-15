@@ -16,7 +16,11 @@
 -export([
     normalize/1,
     match/2,
+<<<<<<< HEAD
     has_required_fields/2
+=======
+    fields/1
+>>>>>>> Covering indexes for Mango
 ]).
 
 
@@ -674,3 +678,16 @@ has_required_fields_or_test() ->
     ?assertEqual(false, has_required_fields(Normalized, RequiredFields)).
 
 -endif.
+% This function returns the list of fields
+% referenced in a selector
+
+fields({[{_, Args}]}) when is_list(Args) ->
+    lists:flatten([fields(A) || A <- Args]);
+
+% terminating fields
+fields({[{Field, _}]}) ->
+    [Field];
+
+% An empty selector
+fields({[]}) ->
+    [].
