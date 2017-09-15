@@ -193,7 +193,7 @@ choose_best_index(_DbName, IndexRanges) ->
 handle_message({meta, _}, Cursor) ->
     {ok, Cursor};
 handle_message({row, Props}, Cursor) ->
-    case doc_member(Cursor#cursor.db, Props, Cursor#cursor.opts, Cursor#cursor.execution_stats) of
+    case doc_member(Props, Cursor#cursor.execution_stats) of
         {ok, Doc, {execution_stats, ExecutionStats1}} ->
             Cursor1 = Cursor#cursor {
                 execution_stats = ExecutionStats1
@@ -253,18 +253,6 @@ ddocid(Idx) ->
 
 apply_opts([], Args) ->
     Args;
-apply_opts([{r, RStr} | Rest], Args) ->
-    IncludeDocs = case list_to_integer(RStr) of
-        1 ->
-            true;
-        R when R > 1 ->
-            % We don't load the doc in the view query because
-            % we have to do a quorum read in the coordinator
-            % so there's no point.
-            false
-    end,
-    NewArgs = Args#mrargs{include_docs = IncludeDocs},
-    apply_opts(Rest, NewArgs);
 apply_opts([{conflicts, true} | Rest], Args) ->
     % I need to patch things so that views can specify
     % parameters when loading the docs from disk
@@ -315,20 +303,11 @@ apply_opts([{_, _} | Rest], Args) ->
     apply_opts(Rest, Args).
 
 
-doc_member(Db, RowProps, Opts, ExecutionStats) ->
+doc_member(RowProps, ExecutionStats) ->
     case couch_util:get_value(doc, RowProps) of
         {DocProps} ->
             ExecutionStats1 = mango_execution_stats:incr_docs_examined(ExecutionStats),
-            {ok, {DocProps}, {execution_stats, ExecutionStats1}};
-        undefined ->
-            ExecutionStats1 = mango_execution_stats:incr_quorum_docs_examined(ExecutionStats),
-            Id = couch_util:get_value(id, RowProps),
-            case mango_util:defer(fabric, open_doc, [Db, Id, Opts]) of
-                {ok, #doc{}=Doc} ->
-                    {ok, couch_doc:to_json_obj(Doc, []), {execution_stats, ExecutionStats1}};
-                Else ->
-                    Else
-            end
+            {ok, {DocProps}, {execution_stats, ExecutionStats1}}
     end.
 
 is_design_doc(RowProps) ->

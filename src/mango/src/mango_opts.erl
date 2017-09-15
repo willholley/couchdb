@@ -117,6 +117,7 @@ validate_find({Props}) ->
             {default, []},
             {validator, fun validate_fields/1}
         ]},
+        % not implemented - here for backwards compatibility only
         {<<"r">>, [
             {tag, r},
             {optional, true},

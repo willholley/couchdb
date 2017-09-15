@@ -156,14 +156,13 @@ class Database(object):
         return r.json()
 
     def find(self, selector, limit=25, skip=0, sort=None, fields=None,
-                r=1, conflicts=False, use_index=None, explain=False,
+                conflicts=False, use_index=None, explain=False,
                 bookmark=None, return_raw=False, update=True, executionStats=False):
         body = {
             "selector": selector,
             "use_index": use_index,
             "limit": limit,
             "skip": skip,
-            "r": r,
             "conflicts": conflicts
         }
         if sort is not None:
