@@ -264,6 +264,29 @@ class IndexSelectionTests(mango.UserDocsTests):
         self.assertEqual(resp["execution_stats"]["results_returned"], 1)
 
 
+    def test_nested_field_covering_index(self):
+        selector = { 
+            "name": {
+                "first": "Stephanie",
+                "last": "This doesn't have to match anything."
+            }
+        }
+        respExplain = self.db.find(selector, fields=["name.first", "name.last"], explain=True)
+        self.assertEqual(respExplain["index"]["type"], "json")
+        self.assertEqual(respExplain["mrargs"]["include_docs"], False)
+    
+    # should not be covering index because it requests
+    # an array field which cannot be represented fully
+    # in a key
+    def test_array_field_not_valid_covering_index(self):
+        selector = { 
+            "favorites": { "$gt": None }
+        }
+        respExplain = self.db.find(selector, fields=["favorites"], explain=True)
+        self.assertEqual(respExplain["index"]["type"], "special")
+        self.assertEqual(respExplain["mrargs"]["include_docs"], True)
+
+
 
 @unittest.skipUnless(mango.has_text_service(), "requires text service")
 class MultiTextIndexSelectionTests(mango.UserDocsTests):
