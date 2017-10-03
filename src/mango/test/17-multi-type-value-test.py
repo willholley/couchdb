@@ -37,11 +37,6 @@ DOCS = [
     }
 ]
 
-class MultiValueFieldDocsNoIndexes(mango.DbPerClass):
-    def setUp(self):
-        self.db.recreate()
-        self.db.save_docs(copy.deepcopy(DOCS))
-
 
 class MultiValueFieldTests:
 
@@ -65,13 +60,18 @@ class MultiValueFieldTests:
 
 
 
-# class MultiValueFieldJSONTests(MultiValueFieldDocsNoIndexes, MultiValueFieldTests):
-#     pass
+class MultiValueFieldJSONTests(mango.DbPerClass, MultiValueFieldTests):
+    def setUp(self):
+        self.db.recreate()
+        self.db.save_docs(copy.deepcopy(DOCS))
+        self.db.create_index(["name"])
 
 # @unittest.skipUnless(mango.has_text_service(), "requires text service")
 # class MultiValueFieldTextTests(MultiValueFieldDocsNoIndexes, OperatorTests):
 #     pass
 
 
-class MultiValueFieldAllDocsTests(MultiValueFieldDocsNoIndexes, MultiValueFieldTests):
-    pass
+class MultiValueFieldAllDocsTests(mango.DbPerClass, MultiValueFieldTests):
+    def setUp(self):
+        self.db.recreate()
+        self.db.save_docs(copy.deepcopy(DOCS))
