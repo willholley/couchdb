@@ -13,6 +13,7 @@
 
 
 import mango
+import functools
 
 class BasicFindTests(mango.UserDocsTests):
 
@@ -321,3 +322,50 @@ class BasicFindTests(mango.UserDocsTests):
         assert explain["mrargs"]["start_key"] == [0]
         assert explain["mrargs"]["end_key"] == ["<MAX>"]
         assert explain["mrargs"]["include_docs"] == True
+
+    def test_fields(self):
+        fields = [
+            ["age"],
+            ["user_id"],
+            ["company", "manager"],
+            ["manager"],
+            ["favorites"],
+            ["twitter"],
+            ["ordered"],
+            ["name.last", "name.first"],
+            [
+                "location.state",
+                "location.city",
+                "location.address.street",
+                "location.address.number"
+            ]
+        ]
+
+        for f in fields:
+            selector = {}
+            for key in f:
+                selector[key] = { "$exists": True }
+
+            docs = self.db.find(selector, fields=f + ["_id"])
+            for d in docs:
+                full_doc = self.db.open_doc(d["_id"])
+                for key in f:
+                    key_parts = key.split(".")
+                    key_value = full_doc
+                    result_value = d
+
+                    for k in key_parts:
+                        key_value = key_value[k]
+                        result_value = result_value[k]
+
+                    self.assertEqual(key_value, result_value)
+
+    def test_fields_array_index(self):
+        selector = { "favorites.3": { "$exists": True } }
+        docs = self.db.find(selector, fields=["_id", "favorites"])
+
+        for d in docs:
+            full_doc = self.db.open_doc(d["_id"])
+            self.assertEqual(full_doc["favorites"][3], d["favorites"][3])
+
+
