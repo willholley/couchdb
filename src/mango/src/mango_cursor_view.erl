@@ -28,6 +28,7 @@
 
 -include_lib("couch/include/couch_db.hrl").
 -include_lib("couch_mrview/include/couch_mrview.hrl").
+-include_lib("fabric/include/fabric.hrl").
 -include("mango_cursor.hrl").
 -include("mango_idx_view.hrl").
 
@@ -211,6 +212,9 @@ choose_best_index(_DbName, IndexRanges) ->
 
 
 handle_message({meta, _}, Cursor) ->
+    {ok, Cursor};
+handle_message({row, #view_row{skipped=true}}, Cursor) ->
+    erlang:display(<<"skipped">>),
     {ok, Cursor};
 handle_message({row, Props}, Cursor) ->
     case doc_member(Cursor#cursor.db, Props, Cursor#cursor.opts, Cursor#cursor.execution_stats) of

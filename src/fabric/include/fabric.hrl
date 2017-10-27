@@ -40,5 +40,5 @@
     replacements
 }).
 
--record(view_row, {key, id, value, doc, worker}).
+-record(view_row, {key, id, value, doc, worker, skipped}).
 -record(change, {key, id, value, deleted=false, doc, worker}).

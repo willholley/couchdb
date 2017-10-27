@@ -128,6 +128,8 @@ maybe_send_row(State) ->
         try get_next_row(State) of
         {_, NewState} when Skip > 0 ->
             maybe_send_row(NewState#collector{skip=Skip-1});
+        {#view_row{skipped=true}, NewState} ->
+            maybe_send_row(NewState);
         {Row, NewState} ->
             case Callback(transform_row(possibly_embed_doc(NewState,Row)), AccIn) of
             {stop, Acc} ->

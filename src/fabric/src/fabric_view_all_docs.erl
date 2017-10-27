@@ -192,6 +192,12 @@ handle_message({meta, Meta0}, {Worker, From}, State) ->
         }}
     end;
 
+handle_message(#view_row{skipped=true} = Row, {Worker, _}, State) ->
+    #collector{counters = Counters0} = State,
+    Counters1 = fabric_dict:update_counter(Worker, 1, Counters0),
+    State1 = State#collector{counters=Counters1},
+    fabric_view:maybe_send_row(State1);
+
 handle_message(#view_row{} = Row, {Worker, From}, State) ->
     #collector{query_args = Args, counters = Counters0, rows = Rows0} = State,
     Dir = Args#mrargs.direction,

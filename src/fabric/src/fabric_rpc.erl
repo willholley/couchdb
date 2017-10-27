@@ -313,7 +313,8 @@ view_cb({row, Row}, Acc) ->
         id = couch_util:get_value(id, Row),
         key = couch_util:get_value(key, Row),
         value = couch_util:get_value(value, Row),
-        doc = couch_util:get_value(doc, Row)
+        doc = couch_util:get_value(doc, Row),
+        skipped = couch_util:get_value(skipped, Row)
     },
     ok = rexi:stream2(ViewRow),
     {ok, Acc};
